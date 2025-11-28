@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from db_manager import get_db_results, OperationalError
-import uvicorn # <-- ADD THIS IMPORT
+import uvicorn # 
 
 # Create the FastAPI application instance
 app = FastAPI(
@@ -8,7 +8,7 @@ app = FastAPI(
     description="Reads data from Slave by default, failing over to Master when necessary."
 )
 
-# --- ENDPOINTS (5 Required) ---
+# --- ENDPOINTS ---
 
 @app.get("/api/v1/row_counts")
 def get_all_row_counts():
