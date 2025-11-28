@@ -3,12 +3,12 @@ from psycopg2 import OperationalError
 import contextlib
 import logging
 
-# --- Configuration (Ensure these IPs and Ports are correct!) ---
+# --- Configuration ---
 DB_USER = 'postgres'
-DB_PASS = '55555' # <-- Reconfirm this password is exactly correct
+DB_PASS = '55555' # <--
 DB_NAME = 'analytics_db'
 
-# NOTE: Both Master and Slave share the same IP on your WSL instance
+# NOTE: Both Master and Slave share the same IP on WSL instance
 DB_HOST = '172.27.142.53' 
 
 MASTER_PORT = 5532
