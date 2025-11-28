@@ -9,7 +9,7 @@ from io import StringIO
 # CONFIG
 # -----------------------------
 CONN_PARAMS = {
-    "dbname": "analytics_db",  # Use the new database name
+    "dbname": "analytics_db", 
     "user": "postgres",
     "password": "55555",
     "host": "localhost",
