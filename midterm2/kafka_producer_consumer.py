@@ -47,7 +47,7 @@ def recover_state(ch_client):
     print("🔄 Recovering state from ClickHouse...")
 
     try:
-        # ვიღებთ ბოლო WINDOW_SIZE რაოდენობის ჩანაწერს თითოეული (source, metric)-სთვის
+       
         query = f"""
             SELECT source_id, metric, value
             FROM (
