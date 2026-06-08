@@ -4,30 +4,33 @@
 -- რა ფასში იყიდებოდა პროდუქტი. სულ რა რაოდენობა გაიყიდა (წმინდა გაყიდვები: გაყიდვებს მინუს დაბრუნებები).
 -- ჯამური შემოსავალი (Revenue): რა თანხა შემოვიდა ამ პროდუქტიდან.
 
-WITH FilteredReceipts AS (
-    -- ვფილტრავთ მონაცემებს რომ ram ლიმიტს არ აცდეს
-    SELECT r.receipt_id, r.batch_id, r.optype, r.rec_status, br.pos_num
-    FROM admin_Lake.APEX_axPMARKET_apos_POS_Receipts AS r
-    INNER JOIN admin_Lake.APEX_axPMARKET_apos_POS_Batches AS br ON br.batch_id = r.batch_id
-    WHERE br.opdate BETWEEN '2026-01-01' AND '2026-06-05'
-      AND r.rec_status = 4
-),
-
-SalesData AS (
+WITH SalesData AS (
     SELECT
         pp.prodpp_id AS product_id,
         pr.BCode AS barcode,
         pro.Products_nu AS product_name,
-        pp.scount AS quantity_sold,
-        pp.priceg AS retail_price,
         pr.InCode AS internal_code,
-        pp.vg AS sales_revenue,
         cat.Category_nu AS main_category,
         pc.PPCat_Nu AS sub_category,
-        concat(l.cr, ' - ', a.Acc_nu) AS supplier_info
-    FROM admin_Lake.APEX_axPMARKET_apos_POS_ReceiptProds AS pp
-    INNER JOIN FilteredReceipts AS r ON pp.receipt_id = r.receipt_id
+        concat(l.cr, ' - ', a.Acc_nu) AS supplier_info,
+    
+        CASE
+            WHEN pp.rec_type = 1 THEN pp.scount
+            WHEN pp.rec_type = 5 THEN -1 * abs(pp.scount)
+            ELSE 0
+        END AS net_quantity,
 
+        CASE
+            WHEN pp.rec_type = 1 THEN pp.vg
+            WHEN pp.rec_type = 5 THEN -1 * abs(pp.vg)
+            ELSE 0
+        END AS net_revenue
+
+    FROM admin_Lake.APEX_axPMARKET_apos_POS_ReceiptProds AS pp
+    INNER JOIN admin_Lake.APEX_axPMARKET_apos_POS_Receipts AS r ON pp.receipt_id = r.receipt_id
+    INNER JOIN admin_Lake.APEX_axPMARKET_apos_POS_Batches AS br ON br.batch_id = r.batch_id
+    INNER JOIN admin_Lake.APEX_axPMARKET_apos_POS_BookProp AS bp ON bp.pos_id = br.pos_num
+    LEFT JOIN admin_Lake.APEX_axPMARKET_dbo_Branchs AS bch ON bch.br = bp.branch_id
     LEFT JOIN admin_Lake.APEX_axPMARKET_dbo_ProdPP AS pr ON pp.prodpp_id = pr.ProdPP_id
     LEFT JOIN admin_Lake.APEX_axPMARKET_dbo_Products AS pro ON pro.Products_id = pr.Products_id
     LEFT JOIN admin_Lake.APEX_axPMARKET_dbo_Category AS cat ON cat.Category_id = pro.Category_id
@@ -35,23 +38,30 @@ SalesData AS (
     LEFT JOIN admin_Lake.APEX_axPMARKET_tmpt_LastSuppData AS l ON l.prodpp_id = pp.prodpp_id
     LEFT JOIN admin_Lake.APEX_axPMARKET_dbo_Accounts AS a ON a.Acc = l.cr
     WHERE pp.status = 4
+      AND r.rec_status = 4
       AND (
           (pp.rec_type = 1 AND r.optype = 1)
           OR (pp.rec_type = 5 AND r.optype = 2)
       )
+      -- თარიღების ფილტრი
+      AND br.opdate BETWEEN '2026-01-01' AND '2026-01-02'
 )
 
--- 2. საბოლოო აგრეგაცია შესაბამისი ალიასებით
+-- 3. საბოლოო რეპორტი
 SELECT
     ifNull(barcode, toString(product_id)) AS Barcode,
     product_name                          AS ProductName,
     internal_code                         AS InternalCode,
     main_category                         AS MainCategory,
     sub_category                          AS SubCategory,
-    retail_price                          AS RetailPrice,
     supplier_info                         AS SupplierInfo,
-    sum(quantity_sold)                    AS TotalQuantitySold,
-    sum(sales_revenue)                    AS TotalRevenue
+
+    -- გამოთვლილი საშუალო გასაყიდი ფასი (რომ პროდუქტი არ გაორდეს ფასის ცვლილებისას)
+    round(sum(net_revenue) / nullIf(sum(net_quantity), 0), 2) AS AverageRetailPrice,
+
+    -- ბიზნეს მეტრიკები (KPIs)
+    sum(net_quantity)                    AS TotalQuantitySold,
+    sum(net_revenue)                     AS TotalRevenue
 FROM SalesData
 GROUP BY
     ifNull(barcode, toString(product_id)),
@@ -59,17 +69,12 @@ GROUP BY
     internal_code,
     main_category,
     sub_category,
-    retail_price,
     supplier_info
 ORDER BY TotalRevenue DESC
-
 SETTINGS
     join_use_nulls = 1,
-    -- თუ მეხსიერება არ ეყო, ClickHouse დააჯგუფებს დისკზე
     max_bytes_before_external_group_by = 20000000000,
-    -- ჯოინების ოპტიმიზაციისთვის დისკის გამოყენება
     max_bytes_before_external_sort = 10000000000;
-
 
 ----------------------------------------------------------------
 ---------------------------------------------------------------
