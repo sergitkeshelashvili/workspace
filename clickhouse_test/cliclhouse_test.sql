@@ -3,7 +3,6 @@
 -- მომწოდებლი: რომელ მომწოდებელთან ასოცირდება ესა თუ ის გაყიდული საქონელი.
 -- რა ფასში იყიდებოდა პროდუქტი. სულ რა რაოდენობა გაიყიდა (წმინდა გაყიდვები: გაყიდვებს მინუს დაბრუნებები).
 -- ჯამური შემოსავალი (Revenue): რა თანხა შემოვიდა ამ პროდუქტიდან.
-
 WITH SalesData AS (
     SELECT
         pp.prodpp_id AS product_id,
@@ -13,7 +12,7 @@ WITH SalesData AS (
         cat.Category_nu AS main_category,
         pc.PPCat_Nu AS sub_category,
         concat(l.cr, ' - ', a.Acc_nu) AS supplier_info,
-    
+
         CASE
             WHEN pp.rec_type = 1 THEN pp.scount
             WHEN pp.rec_type = 5 THEN -1 * abs(pp.scount)
@@ -43,11 +42,14 @@ WITH SalesData AS (
           (pp.rec_type = 1 AND r.optype = 1)
           OR (pp.rec_type = 5 AND r.optype = 2)
       )
-      -- თარიღების ფილტრი
+      
       AND br.opdate BETWEEN '2026-01-01' AND '2026-01-02'
+      AND (0 = 0 OR br.pos_num = 0)
+      AND ('' = '' OR pro.Category_id = '')
+      AND ('' = '' OR pr.PPCat_id = '')
+      AND ('' = '' OR bp.branch_id = '')
 )
 
--- 3. საბოლოო რეპორტი
 SELECT
     ifNull(barcode, toString(product_id)) AS Barcode,
     product_name                          AS ProductName,
@@ -56,10 +58,8 @@ SELECT
     sub_category                          AS SubCategory,
     supplier_info                         AS SupplierInfo,
 
-    -- გამოთვლილი საშუალო გასაყიდი ფასი (რომ პროდუქტი არ გაორდეს ფასის ცვლილებისას)
     round(sum(net_revenue) / nullIf(sum(net_quantity), 0), 2) AS AverageRetailPrice,
 
-    -- ბიზნეს მეტრიკები (KPIs)
     sum(net_quantity)                    AS TotalQuantitySold,
     sum(net_revenue)                     AS TotalRevenue
 FROM SalesData
