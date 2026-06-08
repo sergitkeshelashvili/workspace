@@ -78,7 +78,7 @@ SETTINGS
 
 WITH
     '2026-01-01'::Date AS param_d1,
-    '2026-06-05'::Date AS param_d2,
+    '2026-01-02'::Date AS param_d2,
     NULL         AS param_db,
     NULL         AS param_cr,
     NULL         AS param_BCode,
@@ -96,8 +96,8 @@ FilteredBook AS (
       AND (param_db IS NULL OR cr = param_db)
 ),
 
--- 2. b3 pre-filter: მხოლოდ საჭირო Docs_id-ების Book ჩანაწერები OpDet '02'-ით
--- FillingRightJoinSide-ის მთავარი გამომწვევი — სრული Book ცხრილი, ახლა pre-filtered
+-- 2.
+
 FilteredB3 AS (
     SELECT b3.Book_id, b3.db, b3.cr, b3.Docs_id, b3.OpDet_id
     FROM admin_Lake.APEX_axPMARKET_dbo_Book AS b3
@@ -119,7 +119,7 @@ AggregatedOrders AS (
     GROUP BY Book_Id, Supplies_Id, Vat
 ),
 
--- 4. Supplies pre-filter: მხოलо ის Supplies, რომლებიც AggregatedOrders-შია
+-- 4. Supplies pre-filter
 FilteredSupplies AS (
     SELECT
         s.Supplies_id,
@@ -132,14 +132,14 @@ FilteredSupplies AS (
     WHERE s.Supplies_id IN (SELECT Supplies_Id FROM AggregatedOrders)
 ),
 
--- 5. b2 pre-filter: მხოло Supplies.Cr_id-ზე მიბმული Book ჩანაწერები
+-- 5.
 FilteredB2 AS (
     SELECT DISTINCT b2.Book_id, b2.cr, b2.NumberIn, b2.NumberOut, b2.dDate
     FROM admin_Lake.APEX_axPMARKET_dbo_Book AS b2
     WHERE b2.Book_id IN (SELECT Cr_id FROM FilteredSupplies)
 ),
 
--- 6. ძირითადი გაანგარიშება (ახლა ყველა right-side პატარაა)
+-- 6. ძირითადი გაანგარიშება
 sales AS (
     SELECT
         s.ProdPP_id                                                                       AS prodpp_id,
@@ -192,7 +192,7 @@ FilteredProdView AS (
       AND (param_ppcat       IS NULL OR pp.PPCat_id      = param_ppcat)
 ),
 
--- 8. ცნობარების მიბმა (ახლა ყველა right-side pre-filtered)
+
 cc AS (
     SELECT
         s.vg, s.vgd, s.cost, s.margin, s.scount,
@@ -239,7 +239,7 @@ cc AS (
     WHERE (param_pcat IS NULL OR ap.codeid = param_pcat)
 )
 
--- 9. საბოლოო SELECT — cc-ში უკვე გვაქვს accalt/crm/db, ამოვარდა ზედმეტი join-ები
+-- 9. საბოლოო SELECT 
 SELECT
     aa.*,
     c.sn AS sn
