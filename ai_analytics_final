@@ -1,0 +1,238 @@
+from fastapi import FastAPI, HTTPException, Body
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from openai import OpenAI
+from googleapiclient.discovery import build
+
+app = FastAPI(title="YouTube AI Agent Pipeline API")
+
+# ---------------------------------------
+# CORS კონფიგურაცია
+# ---------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ---------------------------------------
+# კონფიგურაცია (შენი გასაღებები)
+# ---------------------------------------
+GROQ_API_KEY = ""
+YOUTUBE_API_KEY = ""
+
+client = OpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key=GROQ_API_KEY
+)
+
+
+# ---------------------------------------
+# YouTube Data Fetcher
+# ---------------------------------------
+def fetch_youtube_data(query: str, max_results: int = 5) -> str:
+    print(f"1. Fetching live YouTube data for: '{query}'...")
+    try:
+        youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+        request = youtube.search().list(
+            q=query,
+            part='snippet',
+            maxResults=max_results,
+            type='video'
+        )
+        response = request.execute()
+
+        videos = []
+        for item in response.get('items', []):
+            title = item['snippet']['title']
+            video_id = item['id']['videoId']
+            description = item['snippet']['description']
+            videos.append(f"Title: {title}\nURL: https://www.youtube.com/watch?v={video_id}\nDescription: {description}\n")
+
+        if not videos:
+            return "No videos found for this query."
+
+        return "\n---\n".join(videos)
+    except Exception as e:
+        print(f"YouTube API Error: {e}")
+        return f"Mock Data / Error: Unable to fetch live YouTube data for query: {query}. Details: {str(e)}"
+
+
+# ---------------------------------------
+# AI Agent Analyzer (Optimized for Top Videos Extraction)
+# ---------------------------------------
+def analyze_with_ai_agent(data_context: str, user_query: str) -> str:
+    print("2. Processing YouTube data to extract top videos...")
+
+    system_instruction = (
+        "You are an elite YouTube Content Curator and Data Engineer. "
+        "Your task is to review the raw YouTube ingestion stream, filter out any irrelevant noise, "
+        "and present the best, most relevant top videos clearly with their titles, direct links, and a 1-sentence summary."
+    )
+
+    user_prompt = f"""
+    Analyze the following YouTube ingestion stream for the query: '{user_query}'
+    
+    RAW DATA CONTEXT:
+    {data_context}
+
+    Please output the verified top videos in this exact clean format:
+
+    ### 🎬 Top Relevant Videos
+
+    1. **[Video Title]**
+       - **URL:** [Video URL]
+       - **Summary:** [1-sentence description of the video content]
+
+    2. **[Video Title]**
+       - **URL:** [Video URL]
+       - **Summary:** [1-sentence description of the video content]
+
+    (Repeat for all valid videos found in the context)
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.2,
+            max_tokens=1000  # საკმარისი ლიმიტი რამდენიმე ვიდეოს ზუსტი სიისთვის
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Groq API Error: {e}")
+        raise HTTPException(status_code=500, detail=f"AI Agent Error: {str(e)}")
+
+
+def run_pipeline(user_query: str, max_results: int = 5) -> str:
+    raw_data = fetch_youtube_data(user_query, max_results)
+    ai_analysis = analyze_with_ai_agent(raw_data, user_query)
+    return ai_analysis
+
+
+# ---------------------------------------
+# API ენდპოინტები
+# ---------------------------------------
+@app.post("/analyze")
+def analyze_endpoint(query: str = Body(..., media_type="text/plain")):
+    if not query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+    try:
+        analysis_result = run_pipeline(query, max_results=5)
+        return {"query": query, "analysis": analysis_result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
+
+
+# ---------------------------------------
+# პრეზენტაციის ვიზუალური ინტერფეისი (Cyber-Matrix Green UI)
+# ---------------------------------------
+@app.get("/", response_class=HTMLResponse)
+def presentation_ui():
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>YouTube AI Analytics Agent</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+        <style>
+            .matrix-glow {
+                box-shadow: 0 0 25px rgba(34, 197, 94, 0.15);
+            }
+            .prose strong { color: #4ade80; }
+            .prose h1, .prose h2, .prose h3 { color: #86efac; border-bottom: 1px solid #14532d; padding-bottom: 0.3rem; }
+            .prose ul { list-style-type: square; color: #bbf7d0; }
+            .prose a { color: #34d399; text-decoration: underline; }
+        </style>
+    </head>
+    <body class="bg-[#050b07] text-emerald-100 min-h-screen flex flex-col items-center p-6 selection:bg-emerald-500 selection:text-black font-mono">
+        
+        <div class="w-full max-w-5xl bg-[#0a140f] border border-emerald-900/60 p-8 rounded-2xl matrix-glow relative overflow-hidden">
+            
+            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 via-green-400 to-teal-500"></div>
+
+            <div class="flex items-center justify-between mb-8 border-b border-emerald-900/40 pb-5">
+                <div>
+                    <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 via-green-300 to-teal-400 bg-clip-text text-transparent">
+                        // YOUTUBE_AI_AGENT.v3
+                    </h1>
+                    <p class="text-xs text-emerald-500/80 mt-1 uppercase tracking-widest font-semibold">
+                        Reality ➔ Observation ➔ Measurement ➔ Data ➔ Models ➔ Understanding ➔ Action
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                    <span class="px-3 py-1 bg-emerald-950 text-emerald-400 border border-emerald-700/50 text-xs rounded-full font-mono shadow-inner">
+                        SYS: ONLINE [GROQ/LLAMA]
+                    </span>
+                </div>
+            </div>
+            
+            <div class="flex gap-3 mb-8">
+                <input type="text" id="queryInput" placeholder="Enter target query (e.g., German food trends 2025)..." 
+                    class="flex-1 bg-[#050b07] border border-emerald-800/80 rounded-xl px-5 py-4 text-emerald-200 placeholder:text-emerald-700/60 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 transition-all text-sm font-mono">
+                <button onclick="runAnalysis()" id="submitBtn"
+                    class="bg-emerald-600 hover:bg-emerald-500 active:scale-95 px-8 py-4 rounded-xl font-bold text-black transition-all shadow-lg shadow-emerald-900/50 flex items-center gap-2 cursor-pointer">
+                    <span>EXECUTE</span>
+                    <span>⚡</span>
+                </button>
+            </div>
+
+            <div id="loader" class="hidden text-center py-20 text-emerald-400 animate-pulse font-mono text-sm tracking-widest bg-[#050b07]/50 rounded-xl border border-emerald-900/30">
+                [>] INGESTING YOUTUBE STREAM & EXTRACTING TOP VIDEOS...
+            </div>
+
+            <div id="resultContainer" class="hidden bg-[#050b07] border border-emerald-900/60 rounded-xl p-6 mt-4 prose prose-invert max-w-none text-emerald-200/90 shadow-inner font-sans">
+            </div>
+        </div>
+
+        <script>
+            async function runAnalysis() {
+                const query = document.getElementById('queryInput').value.trim();
+                const loader = document.getElementById('loader');
+                const resultContainer = document.getElementById('resultContainer');
+                const btn = document.getElementById('submitBtn');
+
+                if (!query) return alert('Please enter a query');
+
+                loader.classList.remove('hidden');
+                resultContainer.classList.add('hidden');
+                btn.disabled = true;
+
+                try {
+                    const response = await fetch('/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain' },
+                        body: query
+                    });
+
+                    const data = await response.json();
+                    if (response.ok) {
+                        resultContainer.innerHTML = marked.parse(data.analysis);
+                        resultContainer.classList.remove('hidden');
+                    } else {
+                        resultContainer.innerHTML = `<span class="text-rose-400 font-mono">CRITICAL ERROR: ${data.detail}</span>`;
+                        resultContainer.classList.remove('hidden');
+                    }
+                } catch (err) {
+                    alert('Network error: ' + err);
+                } finally {
+                    loader.classList.add('hidden');
+                    btn.disabled = false;
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
