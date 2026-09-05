@@ -1,0 +1,117 @@
+from fastapi import FastAPI, HTTPException, Body
+from openai import OpenAI
+from googleapiclient.discovery import build
+
+app = FastAPI(title="YouTube AI Agent Pipeline API (Groq)")
+
+# ---------------------------------------
+# კონფიგურაცია
+# ---------------------------------------
+GROQ_API_KEY = "xxx"
+YOUTUBE_API_KEY = "xxx"
+
+# ვუკავშირდებით Groq-ის კლიენტს
+client = OpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key=GROQ_API_KEY
+)
+
+
+# ---------------------------------------
+# YouTube Data Fetcher
+# ---------------------------------------
+def fetch_youtube_data(query: str, max_results: int = 5) -> str:
+    print(f"1. Fetching live YouTube data for: '{query}'...")
+    try:
+        youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+        request = youtube.search().list(
+            q=query,
+            part='snippet',
+            maxResults=max_results,
+            type='video'
+        )
+        response = request.execute()
+
+        videos = []
+        for item in response.get('items', []):
+            title = item['snippet']['title']
+            video_id = item['id']['videoId']
+            description = item['snippet']['description']
+            videos.append(f"Title: {title}\nURL: https://www.youtube.com/watch?v={video_id}\nDescription: {description}\n")
+
+        if not videos:
+            return "No videos found for this query."
+
+        return "\n---\n".join(videos)
+    except Exception as e:
+        print(f"YouTube API Error: {e}")
+        return f"Mock Data / Error: Unable to fetch live YouTube data for query: {query}. Details: {str(e)}"
+
+
+# ---------------------------------------
+# AI Agent Analyzer
+# ---------------------------------------
+def analyze_with_ai_agent(data_context: str, user_query: str) -> str:
+    print("2. Sending data to AI Agent (Groq)...")
+
+    prompt = f"""
+    You are an expert AI Data Engineering and Analytics assistant. 
+    Analyze the following YouTube search results based on the user's request: '{user_query}'
+    
+    Data from YouTube:
+    {data_context}
+    
+    Provide a structured summary, identifying the top learning trends, content patterns, and actionable recommendations.
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-oss-20b",  # გადავრთეთ მიმდინარე აქტიურ მოდელზე
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Groq API Error: {e}")
+        raise HTTPException(status_code=500, detail=f"AI Agent Error: {str(e)}")
+
+
+# ---------------------------------------
+# მთავარი Pipeline-ის ფუნქცია
+# ---------------------------------------
+def run_pipeline(user_query: str, max_results: int = 5) -> str:
+    raw_data = fetch_youtube_data(user_query, max_results)
+    ai_analysis = analyze_with_ai_agent(raw_data, user_query)
+    return ai_analysis
+
+
+# ---------------------------------------
+# FastAPI ენდპოინტები
+# ---------------------------------------
+@app.get("/")
+def home():
+    return {"message": "YouTube AI Pipeline API (Groq) active. Use POST /analyze."}
+
+
+@app.post("/analyze")
+def analyze_endpoint(query: str = Body(..., media_type="text/plain")):
+    if not query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+
+    try:
+        analysis_result = run_pipeline(query, max_results=5)
+        return {
+            "query": query,
+            "analysis": analysis_result
+        }
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
